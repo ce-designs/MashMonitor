@@ -17,7 +17,7 @@ byte tMode;
 
 void setup()
 {
-	Serial.begin(9600);
+	//Serial.begin(9600);
 	lcd.begin(16, 2);
 
 	// read a byte from the current address of the EEPROM
@@ -43,6 +43,7 @@ void loop()
 		lcd.clear();
 		lcd.setCursor(0, 0);
 		lcd.println("CRC is not valid");
+		delay(2500);
 		return;
 	}
 	
@@ -63,6 +64,7 @@ void loop()
 		lcd.println("Not a DS18x20");
 		lcd.setCursor(0, 1);
 		lcd.println("family device!");
+		delay(2500);
 		return;
 	}
 
@@ -104,24 +106,41 @@ void loop()
 	celsius = (float)raw / 16.0;
 	fahrenheit = celsius * 1.8 + 32.0;
 	
+	lcd.clear();
+	lcd.setCursor(0, 0);
 	switch (tMode) {
 	case Fahrenheit:
-		Serial.print(fahrenheit);
-		Serial.println(" Fahrenheit");
+		lcd.println(fahrenheit);
+		lcd.println(" Fahrenheit");
+		//Serial.print(fahrenheit);
+		//Serial.println(" Fahrenheit");
 		break;
 	case Celcius:
-		Serial.print(celsius);
-		Serial.println(" Celsius");
+		lcd.println(celsius);
+		lcd.println(" Celsius");
+		//Serial.print(celsius);
+		//Serial.println(" Celsius");
 		break;
 	default:
 		SetTModeDefault();
 		break;
-	}
-	
+	}	
 }
 
 void SetTModeDefault()
 {
-	EEPROM.write(address, Celcius);
-	tMode = Celcius;
+	switch (tMode) {
+	case Fahrenheit:
+		EEPROM.write(address, Celcius);
+		tMode = Celcius;
+		break;
+	case Celcius:
+		EEPROM.write(address, Fahrenheit);
+		tMode = Fahrenheit;
+		break;
+	default:
+		EEPROM.write(address, Celcius);
+		tMode = Celcius;
+		break;
+	}	
 }
