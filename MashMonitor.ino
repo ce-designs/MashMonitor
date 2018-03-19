@@ -1,10 +1,13 @@
+#include <TimeLib.h>
+#include <Time.h>
+#include <Button.h>
 #include <OLEDFourBit.h>
 #include <EEPROM.h>
 #include <OneWire.h>
 
 
 // OLED 
-const int rs = 13, rw = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+const int rs = 13, rw = 12, en = 11, d4 = 7, d5 = 6, d6 = 5, d7 = 4;
 OLEDFourBit oled(rs, rw, en, d4, d5, d6, d7);
 
 // one wire
@@ -15,6 +18,19 @@ const byte Fahrenheit = 0, Celcius = 1;
 int address = 0;	// start reading from the first byte (address 0) of the EEPROM
 byte tMode;
 
+// Buttons
+const int tModeBtnPin = 2, stopWatchBtnPin = 3;   				
+const bool pullUp = true, invert = true;
+const int debounce = 20;
+
+Button tModeBtn(tModeBtnPin, pullUp, invert, debounce);
+Button stopWatchBtn(stopWatchBtnPin, pullUp, invert, debounce);
+
+// Timer function
+const byte running = 0, stopped = 1, reset = 2;
+byte timerState = reset;
+long lastWriteTime;
+
 void setup()
 {
 	//Serial.begin(9600);
@@ -22,33 +38,109 @@ void setup()
 
 	// read a byte from the current address of the EEPROM
 	tMode = EEPROM.read(address);
+
+	// attach interupts for reading the buttons immediately
+	attachInterrupt(digitalPinToInterrupt(tModeBtnPin), SetTModeState, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetTimerState, CHANGE);
+		
+	
+	// (re)set the time give the lastWrite Time a valid value
+	setTime(0);
+	lastWriteTime = now();
+
 }
 
 void loop()
+{
+	// update the timer if needed
+	UpdateTimer();
+
+	// update the temperature
+	UpdateTemperature();
+}
+
+void SetTModeState()
+{
+	switch (tMode) 
+	{
+	case Fahrenheit:
+		EEPROM.write(address, Celcius);
+		tMode = Celcius;
+		break;
+	case Celcius:
+		EEPROM.write(address, Fahrenheit);
+		tMode = Fahrenheit;
+		break;
+	default:
+		EEPROM.write(address, Celcius);
+		tMode = Celcius;
+		break;
+	}	
+}
+
+void SetTimerState() 
+{
+	switch (timerState) 
+	{
+	case running:
+
+		timerState = stopped;
+		break;
+	case stopped:
+		
+		timerState == reset;
+		break;
+	case reset:		
+		
+		timerState == running;
+		break;
+	default:
+
+		timerState == running;
+		break;
+	}
+}
+
+
+void UpdateTimer()
+{
+	// update only once per second
+	long time = now();
+	if (timerState == running && (time - lastWriteTime >= 1000))
+	{		
+		lastWriteTime = time;
+		PrintTime(time);
+	}
+}
+
+void UpdateTemperature()
 {
 	byte i;
 	byte present = 0;
 	byte type_s;
 	byte data[12];
 	byte addr[8];
-	float celsius, fahrenheit;	
+	float celsius, fahrenheit;
 
-	if (!ds.search(addr)) {
+	if (!ds.search(addr)) 
+	{
 		ds.reset_search();
 		delay(250);
 		return;
-	}	
+	}
 
-	if (OneWire::crc8(addr, 7) != addr[7]) {
+	if (OneWire::crc8(addr, 7) != addr[7]) 
+	{
 		oled.clear();
 		oled.setCursor(0, 0);
 		oled.println("CRC is not valid");
 		delay(2500);
 		return;
 	}
-	
+
 	// the first ROM byte indicates which chip
-	switch (addr[0]) {
+	switch (addr[0]) 
+	{
 	case 0x10:	// Chip = DS18S20" or old DS1820
 		type_s = 1;
 		break;
@@ -79,7 +171,8 @@ void loop()
 	ds.select(addr);
 	ds.write(0xBE);         // Read Scratchpad
 
-	for (i = 0; i < 9; i++) {           // we need 9 bytes
+	for (i = 0; i < 9; i++) 
+	{           // we need 9 bytes
 		data[i] = ds.read();
 	}
 
@@ -88,14 +181,17 @@ void loop()
 	// be stored to an "int16_t" type, which is always 16 bits
 	// even when compiled on a 32 bit processor.
 	int16_t raw = (data[1] << 8) | data[0];
-	if (type_s) {
+	if (type_s) 
+	{
 		raw = raw << 3; // 9 bit resolution default
-		if (data[7] == 0x10) {
+		if (data[7] == 0x10) 
+		{
 			// "count remain" gives full 12 bit resolution
 			raw = (raw & 0xFFF0) + 12 - data[6];
 		}
 	}
-	else {
+	else 
+	{
 		byte cfg = (data[4] & 0x60);
 		// at lower res, the low bits are undefined, so let's zero them
 		if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
@@ -105,10 +201,11 @@ void loop()
 	}
 	celsius = (float)raw / 16.0;
 	fahrenheit = celsius * 1.8 + 32.0;
-	
+
 	oled.clear();
 	oled.setCursor(0, 0);
-	switch (tMode) {
+	switch (tMode) 
+	{
 	case Fahrenheit:
 		oled.println(fahrenheit);
 		oled.println(" Fahrenheit");
@@ -122,25 +219,31 @@ void loop()
 		//Serial.println(" Celsius");
 		break;
 	default:
-		SetTModeDefault();
+		SetTModeState();
 		break;
-	}	
+	}
 }
 
-void SetTModeDefault()
+void PrintTime(long val)
 {
-	switch (tMode) {
-	case Fahrenheit:
-		EEPROM.write(address, Celcius);
-		tMode = Celcius;
-		break;
-	case Celcius:
-		EEPROM.write(address, Fahrenheit);
-		tMode = Fahrenheit;
-		break;
-	default:
-		EEPROM.write(address, Celcius);
-		tMode = Celcius;
-		break;
-	}	
+	int days = elapsedDays(val);
+	int hours = numberOfHours(val);
+	int minutes = numberOfMinutes(val);
+	int seconds = numberOfSeconds(val);
+
+	// digital clock display of current time
+	oled.setCursor(3, 4);
+	oled.println(days, DEC);
+	printDigits(hours);
+	printDigits(minutes);
+	printDigits(seconds);
+}
+
+void printDigits(byte digits)
+{
+	// utility function for digital clock display: prints colon and leading 0
+	oled.println(":");
+	if (digits < 10)
+		oled.println('0');
+	oled.println(digits, DEC);
 }
