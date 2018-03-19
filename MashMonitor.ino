@@ -1,11 +1,11 @@
+#include <OLEDFourBit.h>
 #include <EEPROM.h>
-#include <LiquidCrystal.h>
 #include <OneWire.h>
 
 
-// liquid crystal
-const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+// OLED 
+const int rs = 13, rw = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+OLEDFourBit oled(rs, rw, en, d4, d5, d6, d7);
 
 // one wire
 OneWire  ds(10);	// on pin 10 (a 4.7K resistor is necessary)
@@ -18,7 +18,7 @@ byte tMode;
 void setup()
 {
 	//Serial.begin(9600);
-	lcd.begin(16, 2);
+	oled.begin(20, 4);
 
 	// read a byte from the current address of the EEPROM
 	tMode = EEPROM.read(address);
@@ -40,9 +40,9 @@ void loop()
 	}	
 
 	if (OneWire::crc8(addr, 7) != addr[7]) {
-		lcd.clear();
-		lcd.setCursor(0, 0);
-		lcd.println("CRC is not valid");
+		oled.clear();
+		oled.setCursor(0, 0);
+		oled.println("CRC is not valid");
 		delay(2500);
 		return;
 	}
@@ -59,11 +59,11 @@ void loop()
 		type_s = 0;
 		break;
 	default:
-		lcd.clear();
-		lcd.setCursor(0, 0);
-		lcd.println("Not a DS18x20");
-		lcd.setCursor(0, 1);
-		lcd.println("family device!");
+		oled.clear();
+		oled.setCursor(0, 0);
+		oled.println("Not a DS18x20");
+		oled.setCursor(0, 1);
+		oled.println("family device!");
 		delay(2500);
 		return;
 	}
@@ -106,18 +106,18 @@ void loop()
 	celsius = (float)raw / 16.0;
 	fahrenheit = celsius * 1.8 + 32.0;
 	
-	lcd.clear();
-	lcd.setCursor(0, 0);
+	oled.clear();
+	oled.setCursor(0, 0);
 	switch (tMode) {
 	case Fahrenheit:
-		lcd.println(fahrenheit);
-		lcd.println(" Fahrenheit");
+		oled.println(fahrenheit);
+		oled.println(" Fahrenheit");
 		//Serial.print(fahrenheit);
 		//Serial.println(" Fahrenheit");
 		break;
 	case Celcius:
-		lcd.println(celsius);
-		lcd.println(" Celsius");
+		oled.println(celsius);
+		oled.println(" Celsius");
 		//Serial.print(celsius);
 		//Serial.println(" Celsius");
 		break;
