@@ -286,3 +286,7 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
+__vm/Upload.vmps.xml
+__vm/Configuration.Debug.vmps.xml
+__vm/Compile.vmps.xml
+MashMonitor.sln
