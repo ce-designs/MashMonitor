@@ -1,14 +1,15 @@
 #include <TimeLib.h>
 #include <Time.h>
 #include <Button.h>
-#include <OLEDFourBit.h>
 #include <EEPROM.h>
 #include <OneWire.h>
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
 
 
 // OLED 
 const int rs = 13, rw = 12, en = 11, d4 = 7, d5 = 6, d6 = 5, d7 = 4;
-OLEDFourBit oled(rs, rw, en, d4, d5, d6, d7);
+LiquidCrystal_I2C lcd(0x20);
 
 // one wire
 OneWire  ds(10);	// on pin 10 (a 4.7K resistor is necessary)
@@ -34,7 +35,9 @@ long lastWriteTime;
 void setup()
 {
 	//Serial.begin(9600);
-	oled.begin(20, 4);
+	lcd.begin(20, 4);
+	lcd.home();
+
 
 	// read a byte from the current address of the EEPROM
 	tMode = EEPROM.read(address);
@@ -131,9 +134,9 @@ void UpdateTemperature()
 
 	if (OneWire::crc8(addr, 7) != addr[7]) 
 	{
-		oled.clear();
-		oled.setCursor(0, 0);
-		oled.println("CRC is not valid");
+		lcd.clear();
+		lcd.setCursor(0, 0);
+		lcd.print("CRC is not valid");
 		delay(2500);
 		return;
 	}
@@ -151,11 +154,13 @@ void UpdateTemperature()
 		type_s = 0;
 		break;
 	default:
-		oled.clear();
-		oled.setCursor(0, 0);
-		oled.println("Not a DS18x20");
-		oled.setCursor(0, 1);
-		oled.println("family device!");
+		lcd.clear();
+		lcd.setCursor(0, 0);
+		lcd.print("Device is not a");
+		lcd.setCursor(0, 1);
+		lcd.print("DS18x20 family");
+		lcd.setCursor(0, 2);
+		lcd.print("device!");
 		delay(2500);
 		return;
 	}
@@ -200,23 +205,32 @@ void UpdateTemperature()
 		//// default is 12 bit resolution, 750 ms conversion time
 	}
 	celsius = (float)raw / 16.0;
-	fahrenheit = celsius * 1.8 + 32.0;
+	fahrenheit = celsius * 1.8 + 32.0;	
 
-	oled.clear();
-	oled.setCursor(0, 0);
+	lcd.setCursor(0, 0);
 	switch (tMode) 
 	{
-	case Fahrenheit:
-		oled.println(fahrenheit);
-		oled.println(" Fahrenheit");
+	case Fahrenheit:		
+		lcd.print(fahrenheit);
+		lcd.print(" Fahrenheit");
+		
 		//Serial.print(fahrenheit);
-		//Serial.println(" Fahrenheit");
+		//Serial.print(" Fahrenheit");
 		break;
 	case Celcius:
-		oled.println(celsius);
-		oled.println(" Celsius");
+		int c;
+		if (celsius > 10)
+			c = 12;
+		else
+			c = 11;
+		lcd.print(celsius);
+		lcd.print(" Celsius");
+		for (size_t i = c; i < 20; i++)
+		{
+			lcd.print(" ");
+		}
 		//Serial.print(celsius);
-		//Serial.println(" Celsius");
+		//Serial.print(" Celsius");
 		break;
 	default:
 		SetTModeState();
@@ -232,8 +246,8 @@ void PrintTime(long val)
 	int seconds = numberOfSeconds(val);
 
 	// digital clock display of current time
-	oled.setCursor(3, 4);
-	oled.println(days, DEC);
+	lcd.setCursor(3, 4);
+	lcd.print(days, DEC);
 	printDigits(hours);
 	printDigits(minutes);
 	printDigits(seconds);
@@ -242,8 +256,8 @@ void PrintTime(long val)
 void printDigits(byte digits)
 {
 	// utility function for digital clock display: prints colon and leading 0
-	oled.println(":");
+	lcd.print(":");
 	if (digits < 10)
-		oled.println('0');
-	oled.println(digits, DEC);
+		lcd.print('0');
+	lcd.print(digits, DEC);
 }
