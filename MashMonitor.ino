@@ -7,7 +7,7 @@
 #include <LiquidCrystal_I2C.h>
 
 
-// OLED 
+// LCD 
 const int rs = 13, rw = 12, en = 11, d4 = 7, d5 = 6, d6 = 5, d7 = 4;
 LiquidCrystal_I2C lcd(0x20);
 
@@ -34,9 +34,9 @@ const int debounce = 20;
 Button tModeBtn(tModeBtnPin, pullUp, invert, debounce);
 Button stopWatchBtn(stopWatchBtnPin, pullUp, invert, debounce);
 
-// Timer function
+// Stopwatch function
 const byte running = 0, stopped = 1, reset = 2;
-byte timerState = reset;
+byte stopwatchState = reset;
 long lastWriteTime;
 
 void setup()
@@ -50,7 +50,7 @@ void setup()
 
 	// attach interupts for reading the buttons immediately
 	attachInterrupt(digitalPinToInterrupt(tModeBtnPin), SetTModeState, CHANGE);
-	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetTimerState, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetStopwatchState, CHANGE);
 
 	// (re)sets the timer 
 	lcd.setCursor(0, 3);
@@ -60,8 +60,8 @@ void setup()
 
 void loop()
 {
-	// update the timer if needed
-	UpdateTimer();
+	// update the stopwatch if needed
+	UpdateStopwatch();
 
 	// update the temperature
 	PrepareTempProbe();
@@ -91,41 +91,41 @@ void SetTModeState()
 	}	
 }
 
-void SetTimerState() 
+void SetStopwatchState() 
 {
 	stopWatchBtn.read();
 	if (stopWatchBtn.wasPressed())
 	{
-		switch (timerState)
+		switch (stopwatchState)
 		{
 		case running:
-			timerState = stopped;
+			stopwatchState = stopped;
 			break;
 		case stopped:
-			timerState = reset;			
+			stopwatchState = reset;
 			lastWriteTime = -1;
 			break;
 		case reset:
-			timerState = running;	
+			stopwatchState = running;
 			break;
 		default:
-			timerState = running;
+			stopwatchState = running;
 			break;
 		}
 	}
 }
 
 
-void UpdateTimer()
+void UpdateStopwatch()
 {
-	if (timerState == reset && lastWriteTime == -1)
+	if (stopwatchState == reset && lastWriteTime == -1)
 	{
 		setTime(0);
 		PrintTime(0);
 	}
 	// update only once per second
 	long time = now();
-	if (timerState == running && (time - lastWriteTime >= 1))
+	if (stopwatchState == running && (time - lastWriteTime >= 1))
 	{				
 		PrintTime(time);
 		lastWriteTime = time;
