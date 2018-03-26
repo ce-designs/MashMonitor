@@ -18,6 +18,13 @@ OneWire  ds(10);	// on pin 10 (a 4.7K resistor is necessary)
 const byte Fahrenheit = 0, Celcius = 1;
 int address = 0;	// start reading from the first byte (address 0) of the EEPROM
 byte tMode;
+byte addr[8];
+byte type_s;
+long previousMillis = 0;        // will store last time
+long interval = 1000;
+const long errorInterval = 2500;
+bool prepareProbe = true;
+bool readProbe = false;
 
 // Buttons
 const int tModeBtnPin = 2, stopWatchBtnPin = 3;   				
@@ -36,21 +43,19 @@ void setup()
 {
 	Serial.begin(9600);
 	lcd.begin(20, 4);
-	lcd.home();
+
 
 	// read a byte from the current address of the EEPROM
 	tMode = EEPROM.read(address);
 
 	// attach interupts for reading the buttons immediately
 	attachInterrupt(digitalPinToInterrupt(tModeBtnPin), SetTModeState, CHANGE);
-	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetTimerState, CHANGE);		
-	
-	// (re)set the time give the lastWrite Time a valid value
-	setTime(0);
-	lastWriteTime = now();
-	
-	PrintTime(lastWriteTime);
+	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetTimerState, CHANGE);
 
+	// (re)sets the timer 
+	lcd.setCursor(0, 3);
+	lcd.print("Elapsed: ");
+	lastWriteTime = -1;
 }
 
 void loop()
@@ -59,7 +64,8 @@ void loop()
 	UpdateTimer();
 
 	// update the temperature
-	UpdateTemperature();
+	PrepareTempProbe();
+	ReadTempProbe();
 }
 
 void SetTModeState()
@@ -70,17 +76,14 @@ void SetTModeState()
 		switch (tMode)
 		{
 		case Fahrenheit:
-			Serial.println("Faherheit");
 			EEPROM.write(address, Celcius);
 			tMode = Celcius;
 			break;
 		case Celcius:
-			Serial.println("Celcius");
 			EEPROM.write(address, Fahrenheit);
 			tMode = Fahrenheit;
 			break;
 		default:
-			Serial.println("Default");
 			EEPROM.write(address, Celcius);
 			tMode = Celcius;
 			break;
@@ -96,20 +99,16 @@ void SetTimerState()
 		switch (timerState)
 		{
 		case running:
-			Serial.println("running");
 			timerState = stopped;
 			break;
 		case stopped:
-			Serial.println("stopped");
-			timerState = reset;
-			break;
-		case reset:
-			Serial.println("reset");
-			timerState = running;
+			timerState = reset;			
 			lastWriteTime = -1;
 			break;
+		case reset:
+			timerState = running;	
+			break;
 		default:
-			Serial.println("Default");
 			timerState = running;
 			break;
 		}
@@ -119,146 +118,167 @@ void SetTimerState()
 
 void UpdateTimer()
 {
-	if (timerState == running && lastWriteTime == -1)
+	if (timerState == reset && lastWriteTime == -1)
 	{
 		setTime(0);
+		PrintTime(0);
 	}
 	// update only once per second
 	long time = now();
 	if (timerState == running && (time - lastWriteTime >= 1))
-	{		
-		lastWriteTime = time;
+	{				
 		PrintTime(time);
+		lastWriteTime = time;
 	}
 }
 
-void UpdateTemperature()
+void PrepareTempProbe()
 {
-	byte i;
-	byte present = 0;
-	byte type_s;
-	byte data[12];
-	byte addr[8];
-	float celsius, fahrenheit;
+	unsigned long currentMillis = millis();
 
-	if (!ds.search(addr)) 
+	if (prepareProbe && (currentMillis - previousMillis > interval))
 	{
-		ds.reset_search();
-		delay(250);
-		return;
-	}
-
-	if (OneWire::crc8(addr, 7) != addr[7]) 
-	{
-		lcd.clear();
-		lcd.setCursor(0, 0);
-		lcd.print("CRC is not valid");
-		delay(2500);
-		return;
-	}
-
-	// the first ROM byte indicates which chip
-	switch (addr[0]) 
-	{
-	case 0x10:	// Chip = DS18S20" or old DS1820
-		type_s = 1;
-		break;
-	case 0x28:	// Chip = DS18B20
-		type_s = 0;
-		break;
-	case 0x22:	// Chip = DS1822
-		type_s = 0;
-		break;
-	default:
-		lcd.clear();
-		lcd.setCursor(0, 0);
-		lcd.print("Device is not a");
-		lcd.setCursor(0, 1);
-		lcd.print("DS18x20 family");
-		lcd.setCursor(0, 2);
-		lcd.print("device!");
-		delay(2500);
-		return;
-	}
-
-	ds.reset();
-	ds.select(addr);
-	ds.write(0x44, 1);        // start conversion, with parasite power on at the end
-
-	delay(1000);     // maybe 750ms is enough, maybe not
-	// we might do a ds.depower() here, but the reset will take care of it.
-
-	present = ds.reset();
-	ds.select(addr);
-	ds.write(0xBE);         // Read Scratchpad
-
-	for (i = 0; i < 9; i++) 
-	{           // we need 9 bytes
-		data[i] = ds.read();
-	}
-
-	// Convert the data to actual temperature
-	// because the result is a 16 bit signed integer, it should
-	// be stored to an "int16_t" type, which is always 16 bits
-	// even when compiled on a 32 bit processor.
-	int16_t raw = (data[1] << 8) | data[0];
-	if (type_s) 
-	{
-		raw = raw << 3; // 9 bit resolution default
-		if (data[7] == 0x10) 
+		if (!ds.search(addr))
 		{
-			// "count remain" gives full 12 bit resolution
-			raw = (raw & 0xFFF0) + 12 - data[6];
+			ds.reset_search();
+			interval = 250;
+			previousMillis = millis();
+			return;
 		}
-	}
-	else 
-	{
-		byte cfg = (data[4] & 0x60);
-		// at lower res, the low bits are undefined, so let's zero them
-		if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
-		else if (cfg == 0x20) raw = raw & ~3; // 10 bit res, 187.5 ms
-		else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
-		//// default is 12 bit resolution, 750 ms conversion time
-	}
-	celsius = (float)raw / 16.0;
-	fahrenheit = celsius * 1.8 + 32.0;	
 
-	int c;
-	lcd.setCursor(0, 0);
-	switch (tMode) 
+		if (OneWire::crc8(addr, 7) != addr[7])
+		{
+			lcd.clear();
+			lcd.setCursor(0, 0);
+			lcd.print("CRC is not valid");
+			interval = errorInterval;
+			previousMillis = millis();
+			return;
+		}
+
+		// the first ROM byte indicates which chip
+		switch (addr[0])
+		{
+		case 0x10:	// Chip = DS18S20" or old DS1820
+			type_s = 1;
+			break;
+		case 0x28:	// Chip = DS18B20
+			type_s = 0;
+			break;
+		case 0x22:	// Chip = DS1822
+			type_s = 0;
+			break;
+		default:
+			lcd.clear();
+			lcd.setCursor(0, 0);
+			lcd.print("Device is not a");
+			lcd.setCursor(0, 1);
+			lcd.print("DS18x20 family");
+			lcd.setCursor(0, 2);
+			lcd.print("device!");
+			interval = errorInterval;
+			previousMillis = millis();
+			return;
+		}
+
+		ds.reset();
+		ds.select(addr);
+		ds.write(0x44, 1);        // start conversion, with parasite power on at the end
+
+		// clear the display when interval is not 1000. Will when the temperature probe is not reconized
+		if (interval == errorInterval)
+		{
+			lcd.clear();
+		}
+
+		prepareProbe = false;
+		readProbe = true;
+		interval = 1000;
+		previousMillis = millis();
+	}
+}
+
+void ReadTempProbe()
+{
+	unsigned long currentMillis = millis();
+
+	if (readProbe && (currentMillis - previousMillis > interval))
 	{
-	case Fahrenheit:	
-		
-		if (celsius > 10)
-			c = 15;
+		// we might do a ds.depower() here, but the reset will take care of it.
+		byte data[12];
+		byte present = 0;
+		float celsius, fahrenheit;
+
+		present = ds.reset();
+		ds.select(addr);
+		ds.write(0xBE);         // Read Scratchpad
+
+		for (size_t i = 0; i < 9; i++)
+		{           // we need 9 bytes
+			data[i] = ds.read();
+		}
+
+		// Convert the data to actual temperature
+		// because the result is a 16 bit signed integer, it should
+		// be stored to an "int16_t" type, which is always 16 bits
+		// even when compiled on a 32 bit processor.
+		int16_t raw = (data[1] << 8) | data[0];
+		if (type_s)
+		{
+			raw = raw << 3; // 9 bit resolution default
+			if (data[7] == 0x10)
+			{
+				// "count remain" gives full 12 bit resolution
+				raw = (raw & 0xFFF0) + 12 - data[6];
+			}
+		}
 		else
-			c = 14;
-		lcd.print(fahrenheit);
-		lcd.print(" Fahrenheit");
-		
-		//Serial.print(fahrenheit);
-		//Serial.print(" Fahrenheit");
-		break;
-	case Celcius:
-		if (celsius > 10)
-			c = 12;
-		else
-			c = 11;
-		lcd.print(celsius);
-		lcd.print(" Celsius");
+		{
+			byte cfg = (data[4] & 0x60);
+			// at lower res, the low bits are undefined, so let's zero them
+			if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
+			else if (cfg == 0x20) raw = raw & ~3; // 10 bit res, 187.5 ms
+			else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
+			//// default is 12 bit resolution, 750 ms conversion time
+		}
+		celsius = (float)raw / 16.0;
+		fahrenheit = celsius * 1.8 + 32.0;
 
-		//Serial.print(celsius);
-		//Serial.print(" Celsius");
-		break;
-	default:
-		SetTModeState();
-		break;
-	}
+		int c;
+		lcd.setCursor(0, 0);
+		switch (tMode)
+		{
+		case Fahrenheit:
 
-	// print blanks
-	for (size_t i = c; i < 20; i++)
-	{
-		lcd.print(" ");
+			if (celsius > 10)
+				c = 15;
+			else
+				c = 14;
+			lcd.print(fahrenheit);
+			lcd.print(" Fahrenheit");
+			break;
+		case Celcius:
+			if (celsius > 10)
+				c = 12;
+			else
+				c = 11;
+			lcd.print(celsius);
+			lcd.print(" Celsius");
+			break;
+		default:
+			SetTModeState();
+			break;
+		}
+
+		// print blanks
+		for (size_t i = c; i < 20; i++)
+		{
+			lcd.print(" ");
+		}
+
+		// start the next temperature read cylce
+		prepareProbe = true;
+		readProbe = false;
 	}
 }
 
@@ -270,7 +290,7 @@ void PrintTime(long val)
 	int seconds = numberOfSeconds(val);
 
 	// digital clock display of current time
-	lcd.setCursor(3, 4);
+	lcd.setCursor(9, 3);	
 	lcd.print(days, DEC);
 	printDigits(hours);
 	printDigits(minutes);

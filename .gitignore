@@ -290,3 +290,4 @@ __vm/Upload.vmps.xml
 __vm/Configuration.Debug.vmps.xml
 __vm/Compile.vmps.xml
 MashMonitor.sln
+__vm/Configuration.Release.vmps.xml
