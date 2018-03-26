@@ -34,22 +34,22 @@ long lastWriteTime;
 
 void setup()
 {
-	//Serial.begin(9600);
+	Serial.begin(9600);
 	lcd.begin(20, 4);
 	lcd.home();
-
 
 	// read a byte from the current address of the EEPROM
 	tMode = EEPROM.read(address);
 
 	// attach interupts for reading the buttons immediately
 	attachInterrupt(digitalPinToInterrupt(tModeBtnPin), SetTModeState, CHANGE);
-	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetTimerState, CHANGE);
-		
+	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetTimerState, CHANGE);		
 	
 	// (re)set the time give the lastWrite Time a valid value
 	setTime(0);
 	lastWriteTime = now();
+	
+	PrintTime(lastWriteTime);
 
 }
 
@@ -64,52 +64,68 @@ void loop()
 
 void SetTModeState()
 {
-	switch (tMode) 
+	tModeBtn.read();      
+	if (tModeBtn.wasPressed())
 	{
-	case Fahrenheit:
-		EEPROM.write(address, Celcius);
-		tMode = Celcius;
-		break;
-	case Celcius:
-		EEPROM.write(address, Fahrenheit);
-		tMode = Fahrenheit;
-		break;
-	default:
-		EEPROM.write(address, Celcius);
-		tMode = Celcius;
-		break;
+		switch (tMode)
+		{
+		case Fahrenheit:
+			Serial.println("Faherheit");
+			EEPROM.write(address, Celcius);
+			tMode = Celcius;
+			break;
+		case Celcius:
+			Serial.println("Celcius");
+			EEPROM.write(address, Fahrenheit);
+			tMode = Fahrenheit;
+			break;
+		default:
+			Serial.println("Default");
+			EEPROM.write(address, Celcius);
+			tMode = Celcius;
+			break;
+		}
 	}	
 }
 
 void SetTimerState() 
 {
-	switch (timerState) 
+	stopWatchBtn.read();
+	if (stopWatchBtn.wasPressed())
 	{
-	case running:
-
-		timerState = stopped;
-		break;
-	case stopped:
-		
-		timerState == reset;
-		break;
-	case reset:		
-		
-		timerState == running;
-		break;
-	default:
-
-		timerState == running;
-		break;
+		switch (timerState)
+		{
+		case running:
+			Serial.println("running");
+			timerState = stopped;
+			break;
+		case stopped:
+			Serial.println("stopped");
+			timerState = reset;
+			break;
+		case reset:
+			Serial.println("reset");
+			timerState = running;
+			lastWriteTime = -1;
+			break;
+		default:
+			Serial.println("Default");
+			timerState = running;
+			break;
+		}
 	}
 }
 
 
 void UpdateTimer()
 {
+	if (timerState == running && lastWriteTime == -1)
+	{
+		setTime(0);
+	}
 	// update only once per second
 	long time = now();
-	if (timerState == running && (time - lastWriteTime >= 1000))
+	if (timerState == running && (time - lastWriteTime >= 1))
 	{		
 		lastWriteTime = time;
 		PrintTime(time);
@@ -207,10 +223,16 @@ void UpdateTemperature()
 	celsius = (float)raw / 16.0;
 	fahrenheit = celsius * 1.8 + 32.0;	
 
+	int c;
 	lcd.setCursor(0, 0);
 	switch (tMode) 
 	{
-	case Fahrenheit:		
+	case Fahrenheit:	
+		
+		if (celsius > 10)
+			c = 15;
+		else
+			c = 14;
 		lcd.print(fahrenheit);
 		lcd.print(" Fahrenheit");
 		
@@ -218,23 +240,25 @@ void UpdateTemperature()
 		//Serial.print(" Fahrenheit");
 		break;
 	case Celcius:
-		int c;
 		if (celsius > 10)
 			c = 12;
 		else
 			c = 11;
 		lcd.print(celsius);
 		lcd.print(" Celsius");
-		for (size_t i = c; i < 20; i++)
-		{
-			lcd.print(" ");
-		}
+
 		//Serial.print(celsius);
 		//Serial.print(" Celsius");
 		break;
 	default:
 		SetTModeState();
 		break;
+	}
+
+	// print blanks
+	for (size_t i = c; i < 20; i++)
+	{
+		lcd.print(" ");
 	}
 }
 
