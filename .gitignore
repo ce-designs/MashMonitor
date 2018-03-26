@@ -293,3 +293,4 @@ MashMonitor.sln
 __vm/Configuration.Release.vmps.xml
 MashMonitor.vcxproj.filters
 __vm/.MashMonitor.vsarduino.h
+MashMonitor.vcxproj
