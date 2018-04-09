@@ -6,17 +6,17 @@
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
 
-
 // LCD 
-const int rs = 13, rw = 12, en = 11, d4 = 7, d5 = 6, d6 = 5, d7 = 4;
 LiquidCrystal_I2C lcd(0x20);
 
-// one wire
+// one wire for the temperature 
 OneWire  ds(10);	// on pin 10 (a 4.7K resistor is necessary)
 
 // EEPROM
 const byte Fahrenheit = 0, Celcius = 1;
 int address = 0;	// start reading from the first byte (address 0) of the EEPROM
+
+// 
 byte tMode;
 byte addr[8];
 byte type_s;
@@ -28,9 +28,8 @@ bool readProbe = false;
 
 // Buttons
 const int tModeBtnPin = 2, stopWatchBtnPin = 3;   				
-const bool pullUp = true, invert = true;
 const int debounce = 20;
-
+const bool pullUp = true, invert = true;
 Button tModeBtn(tModeBtnPin, pullUp, invert, debounce);
 Button stopWatchBtn(stopWatchBtnPin, pullUp, invert, debounce);
 
@@ -41,9 +40,13 @@ long lastWriteTime;
 
 void setup()
 {
-	Serial.begin(9600);
-	lcd.begin(20, 4);
+	//Serial.begin(9600);
 
+	// give the LCD some time to power up
+	delay(500);			
+	
+	// initialize the LCD
+	lcd.begin(20, 4);
 
 	// read a byte from the current address of the EEPROM
 	tMode = EEPROM.read(address);
@@ -249,7 +252,6 @@ void ReadTempProbe()
 		switch (tMode)
 		{
 		case Fahrenheit:
-
 			if (celsius > 10)
 				c = 15;
 			else
