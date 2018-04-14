@@ -5,6 +5,7 @@
 #include <OneWire.h>
 #include <Wire.h> 
 #include <LiquidCrystal_I2C.h>
+#include <Rotary.h>
 
 // LCD 
 LiquidCrystal_I2C lcd(0x20);
@@ -16,26 +17,41 @@ OneWire  ds(10);	// on pin 10 (a 4.7K resistor is necessary)
 const byte Fahrenheit = 0, Celcius = 1;
 int address = 0;	// start reading from the first byte (address 0) of the EEPROM
 
-// 
+// Various constants and variables
+const long MAX_MINUTES = 600;
+const long MIN_MINUTES = 0;
+const long ERROR_INTERVAL = 2500;
 byte tMode;
 byte addr[8];
 byte type_s;
+long buzzerMinutes = 0;
 long previousMillis = 0;        // will store last time
 long interval = 1000;
-const long errorInterval = 2500;
 bool prepareProbe = true;
 bool readProbe = false;
 
+// Buzzer
+const int BUZZER_F = 10;
+const int BUZZER_PIN = 9;
+bool buzz = false;
+bool allowBuzz = true;
+
 // Buttons
-const int tModeBtnPin = 2, stopWatchBtnPin = 3;   				
+const int T_BTN_PIN = 2, SW_BTN_PIN = 3;   				
 const int debounce = 20;
-const bool pullUp = true, invert = true;
-Button tModeBtn(tModeBtnPin, pullUp, invert, debounce);
-Button stopWatchBtn(stopWatchBtnPin, pullUp, invert, debounce);
+const bool PULL_UP = true, INVERT = true;
+Button tModeBtn(T_BTN_PIN, PULL_UP, INVERT, debounce);
+Button stopWatchBtn(SW_BTN_PIN, PULL_UP, INVERT, debounce);
+
+// Rotary encoder
+const int ENC_A_PIN = 4, ENC_B_PIN = 5, ENC_BTN_PIN = 6;
+const long MAX_ENC_INTERVAL = 1000;
+Rotary r = Rotary(ENC_A_PIN, ENC_B_PIN);
+Button encBtn(ENC_BTN_PIN, PULL_UP, INVERT, debounce);
 
 // Stopwatch function
-const byte running = 0, stopped = 1, reset = 2;
-byte stopwatchState = reset;
+const byte RUNNING = 0, STOPPED = 1, RESET = 2;
+byte stopwatchState = RESET;
 long lastWriteTime;
 
 void setup()
@@ -43,22 +59,30 @@ void setup()
 	//Serial.begin(9600);
 
 	// give the LCD some time to power up
-	delay(500);			
+	delay(200);			
 	
 	// initialize the LCD
 	lcd.begin(20, 4);
-
+	
 	// read a byte from the current address of the EEPROM
 	tMode = EEPROM.read(address);
 
 	// attach interupts for reading the buttons immediately
-	attachInterrupt(digitalPinToInterrupt(tModeBtnPin), SetTModeState, CHANGE);
-	attachInterrupt(digitalPinToInterrupt(stopWatchBtnPin), SetStopwatchState, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(T_BTN_PIN), SetTModeState, CHANGE);
+	attachInterrupt(digitalPinToInterrupt(SW_BTN_PIN), SetStopwatchState, CHANGE);
+
+	pinMode(BUZZER_PIN, OUTPUT);
 
 	// (re)sets the timer 
+	lastWriteTime = -1;
+
+	// print default text 
+	lcd.setCursor(0, 2);
+	lcd.print("Buzzer:  ");
+	lcd.print(buzzerMinutes);
 	lcd.setCursor(0, 3);
 	lcd.print("Elapsed: ");
-	lastWriteTime = -1;
+	
 }
 
 void loop()
@@ -69,6 +93,11 @@ void loop()
 	// update the temperature
 	PrepareTempProbe();
 	ReadTempProbe();
+
+	// read encoder for adjusting the buzzer time
+	ReadEncoder();
+
+	SetTModeState();
 }
 
 void SetTModeState()
@@ -101,18 +130,20 @@ void SetStopwatchState()
 	{
 		switch (stopwatchState)
 		{
-		case running:
-			stopwatchState = stopped;
+		case RUNNING:
+			stopwatchState = STOPPED;
+			allowBuzz = false;
 			break;
-		case stopped:
-			stopwatchState = reset;
+		case STOPPED:
+			stopwatchState = RESET;						
 			lastWriteTime = -1;
 			break;
-		case reset:
-			stopwatchState = running;
+		case RESET:
+			stopwatchState = RUNNING;
+			allowBuzz = true;
 			break;
 		default:
-			stopwatchState = running;
+			stopwatchState = RUNNING;
 			break;
 		}
 	}
@@ -121,17 +152,26 @@ void SetStopwatchState()
 
 void UpdateStopwatch()
 {
-	if (stopwatchState == reset && lastWriteTime == -1)
+	if (stopwatchState == RESET && lastWriteTime == -1)
 	{
 		setTime(0);
 		PrintTime(0);
+		return;
 	}
 	// update only once per second
 	long time = now();
-	if (stopwatchState == running && (time - lastWriteTime >= 1))
+	if (stopwatchState == RUNNING && (time - lastWriteTime >= 1))
 	{				
 		PrintTime(time);
 		lastWriteTime = time;
+		if (time >= (buzzerMinutes * 60) && allowBuzz)
+		{
+			StartBuzzing();
+		}
+	}
+	if (stopwatchState == STOPPED && buzz)
+	{
+		StopBuzzing();
 	}
 }
 
@@ -154,7 +194,7 @@ void PrepareTempProbe()
 			lcd.clear();
 			lcd.setCursor(0, 0);
 			lcd.print("CRC is not valid");
-			interval = errorInterval;
+			interval = ERROR_INTERVAL;
 			previousMillis = millis();
 			return;
 		}
@@ -179,7 +219,7 @@ void PrepareTempProbe()
 			lcd.print("DS18x20 family");
 			lcd.setCursor(0, 2);
 			lcd.print("device!");
-			interval = errorInterval;
+			interval = ERROR_INTERVAL;
 			previousMillis = millis();
 			return;
 		}
@@ -189,7 +229,7 @@ void PrepareTempProbe()
 		ds.write(0x44, 1);        // start conversion, with parasite power on at the end
 
 		// clear the display when interval is not 1000. Will when the temperature probe is not reconized
-		if (interval == errorInterval)
+		if (interval == ERROR_INTERVAL)
 		{
 			lcd.clear();
 		}
@@ -273,7 +313,7 @@ void ReadTempProbe()
 		}
 
 		// print blanks
-		for (size_t i = c; i < 20; i++)
+		for (size_t i = c; i < 19; i++)
 		{
 			lcd.print(" ");
 		}
@@ -306,4 +346,51 @@ void printDigits(byte digits)
 	if (digits < 10)
 		lcd.print('0');
 	lcd.print(digits, DEC);
+}
+
+void ReadEncoder()
+{	
+	unsigned long currentMillis = millis();
+	while (millis() - currentMillis < MAX_ENC_INTERVAL)
+	{		
+		unsigned char result = r.process();
+		if (result)
+		{
+			currentMillis = millis();
+			lcd.setCursor(9, 2);
+			if (result == DIR_CW && buzzerMinutes < MAX_MINUTES)
+			{
+				buzzerMinutes++;
+				lcd.print(buzzerMinutes);
+			}				
+			else if (result != DIR_CW && buzzerMinutes > MIN_MINUTES)
+			{
+				buzzerMinutes--;
+				lcd.print(buzzerMinutes);
+				lcd.print("  ");
+			}
+			allowBuzz = (buzzerMinutes * 60 > now());	// allow buzzer to buzz
+		}
+		else
+		{
+			encBtn.read();
+			if (encBtn.wasPressed() && buzz)
+			{
+				StopBuzzing();
+				allowBuzz = false;
+			}
+		}
+	}
+}
+
+void StartBuzzing()
+{
+	analogWrite(BUZZER_PIN, BUZZER_F);
+	buzz = true;
+}
+
+void StopBuzzing()
+{
+	analogWrite(BUZZER_PIN, 0);
+	buzz = false;	
 }
